@@ -15,9 +15,9 @@ the command line.
   APIs (`insights`).
 - **Scenario modelling** that applies percentage adjustments and stores or
   exports the resulting dataset (`build-scenario`).
-- **Excel task pane** that talks to a FastAPI bridge for loading data,
-  refreshing reports, exporting scenarios, and generating AI insights directly
-  from Excel.
+- **Excel ribbon add-in** (VBA/.xlam) that talks to a FastAPI bridge for
+  loading data, refreshing reports, exporting scenarios, and generating AI
+  insights without relying on Office.js.
 
 ## Quick start
 
@@ -120,51 +120,39 @@ pytest
 The runtime depends on `openpyxl` for Excel support and `httpx` for the
 OpenAI-compatible client. `pytest` powers the test suite.
 
-## Excel add-in bridge
+## Excel add-in (VBA)
 
-The repository ships with a companion Excel add-in under `excel_addin/` that
-talks to a lightweight FastAPI bridge. The add-in surfaces three ribbon
-commands on macOS Excel:
+The repository now ships with a VBA implementation of the Excel add-in under
+`excel_vba/`. It replaces the legacy Office.js task pane with a ribbon tab that
+works on any desktop build of Excel, including perpetual editions such as
+Office LTSC 2021. The add-in reuses the existing FastAPI bridge
+(`app/office_bridge.py`) for all data operations.
 
-- **Load data** – call the `/load-data` endpoint to ingest CSV/Excel files.
-- **Refresh reports** – call `/reports/summary` and push the aggregated rows
-  into a worksheet table named `ReportsTable`.
-- **Export scenario** – call `/scenarios/export`, optionally persist the result
-  to SQLite, and push the adjusted rows to `ScenariosTable`.
-- **AI insights** – call `/insights/variance` to request a narrative summary of
-  variance data and, optionally, populate an `Insights` worksheet.
+### Start the FastAPI bridge
 
-The bridge also exposes `/scenarios/list`, which returns the distinct scenario
-names stored in the warehouse. The Excel task pane fetches this list when the
-AI form loads and after each data import, populating dropdown selectors for the
-actual and budget scenarios. If the list cannot be retrieved, the form falls
-back to manual text entry so you can continue working offline.
+Run the bridge in a terminal before launching Excel. HTTPS is no longer
+required because the VBA add-in talks to the backend over HTTP on localhost.
 
-### Start the HTTPS services
+```bash
+uvicorn app.office_bridge:app --host 0.0.0.0 --port 8000
+```
 
-Office on macOS requires HTTPS for both the task pane and backend. The
-instructions below assume you are using the default local ports defined in the
-manifest (3000 for the task pane, 8000 for the Python bridge).
+You can customise the database location and admin token using the environment
+variables described in `app/settings.py` (for example
+`DATARAILS_OPEN_BRIDGE_TOKEN` to secure the API-key storage endpoint).
 
-1. Create and trust a development certificate (see the next section for
-   platform-specific guidance) and copy the certificate (`devcert.pem`) and key
-   (`devcert-key.pem`) into `excel_addin/certs/`.
-2. Start the FastAPI bridge with TLS enabled:
+### Build the ribbon add-in
 
-   ```bash
-   uvicorn app.office_bridge:app \
-       --host 0.0.0.0 --port 8000 \
-       --ssl-certfile excel_addin/certs/devcert.pem \
-       --ssl-keyfile excel_addin/certs/devcert-key.pem
-   ```
+Follow the detailed walkthrough in [`excel_vba/README.md`](excel_vba/README.md):
 
-3. In a separate terminal, serve the task pane assets:
+1. Import the modules and `frmSettings` form into a blank workbook.
+2. Attach `customUI/customUI14.xml` using the Office RibbonX editor.
+3. Save the workbook as `Datarails.xlam` and load it via Excel's Add-ins manager.
 
-   ```bash
-   cd excel_addin
-   npm install
-   npm run dev
-   ```
+The ribbon exposes buttons for loading data, refreshing reports, exporting
+scenarios, generating AI insights, fetching history, storing API keys, and
+opening the connection-settings dialog. Preferences are persisted in a hidden
+`_DatarailsConfig` worksheet inside the add-in workbook.
 
 ### Configure AI credentials
 
@@ -180,86 +168,14 @@ an OpenAI-compatible endpoint:
 - `DATARAILS_OPEN_API_MODE` – optional endpoint selection
   (`chat-completions` or `responses`, default `chat-completions`).
 
-In addition to environment variables, the bridge can persist an API key in an
-encrypted file located under `app/`. To enable secure storage, configure an
-administrative bearer token on the backend:
+To store a key on the bridge, set `DATARAILS_OPEN_BRIDGE_TOKEN` before starting
+uvicorn. The **Store API Key** button on the ribbon will send the key to
+`POST /settings/api-key`, and you can clear it by submitting an empty value.
 
-```bash
-export DATARAILS_OPEN_BRIDGE_TOKEN="bridge-admin-token"
-```
+### Legacy Office.js add-in
 
-Clients can then call the protected endpoint to update the stored key:
+The previous React/Office.js task pane has been archived under `legacy_web_ui/`.
+It remains in the repository for reference but is no longer maintained. If you
+still need the web UI, serve it with `npm run dev` inside that directory and
+update the manifest as required.
 
-```bash
-curl -X POST "https://localhost:8000/settings/api-key" \
-  -H "Authorization: Bearer ${DATARAILS_OPEN_BRIDGE_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{"apiKey": "sk-..."}'
-```
-
-The Excel task pane surfaces a **Store personal API key on the bridge** checkbox
-that uses this endpoint automatically. Provide the same bearer token in the
-task pane's connection settings so the add-in can authenticate. The add-in only
-stores the "use personal key" flag locally; the key itself is encrypted on disk
-by the backend and reused for subsequent `/insights/variance` requests.
-
-### Generate insights from Excel
-
-Once the backend and task pane are running:
-
-1. Open the **Datarails** tab in Excel and verify the bridge URL matches your
-   FastAPI instance (for example `https://localhost:8000`).
-2. In the **AI Insights** section select the actual and budget scenarios that
-   exist in your SQLite database, optionally tweak the prompt, and provide an
-   API key (unless the backend already has `DATARAILS_OPEN_API_KEY`).
-3. Choose whether to store the response in the `Insights` worksheet and adjust
-   the advanced options (API base, model, endpoint) if required.
-4. Click **Generate insights**. The task pane displays the narrative response
-   and, when enabled, populates the `Insights` worksheet with both the
-   narrative and the underlying variance rows.
-
-### macOS sideloading notes
-
-The manifest file `excel_addin/manifest.xml` registers a custom tab and ribbon
-group so you can sideload the add-in on macOS Excel (v16.67 or newer):
-
-1. Open Excel and navigate to **Insert → Add-ins → My Add-ins → Upload My
-   Add-in…**.
-2. Browse to `excel_addin/manifest.xml` and confirm the warning about private
-   add-ins.
-3. If macOS reports that the HTTPS endpoint is untrusted, open **Keychain
-   Access**, locate the certificate used above, and set **Trust → When using
-   this certificate** to **Always Trust**. Re-launch Excel afterwards.
-4. If you are using a self-signed certificate, ensure the Common Name matches
-   `localhost`. Tools like [`mkcert`](https://github.com/FiloSottile/mkcert) can
-   generate trusted certificates tied to your local keychain.
-5. After sideloading, Excel displays a **Datarails** tab with buttons for each
-   supported workflow.
-
-### Manual QA checklist
-
-Use the following steps to validate end-to-end behaviour with a connected
-workbook:
-
-1. **Load data** – In the task pane, set the bridge URL to
-   `https://localhost:8000`, provide a CSV or XLSX path, and run **Load data**.
-   Confirm the success message and inspect the SQLite database if needed.
-2. **Refresh reports** – Create a blank worksheet named `Reports` (or let the
-   add-in create it). Press **Refresh report table**. A table named
-   `ReportsTable` should be created/updated with the aggregated rows and the
-   sheet activated.
-3. **Export scenario** – Configure the source/target scenarios, adjustment, and
-   persistence options, then click **Export scenario to worksheet**. The
-   `Scenarios` worksheet should contain a refreshed `ScenariosTable` with the
-   adjusted data.
-4. **Generate AI insights** – Populate the **AI Insights** form with actual and
-   budget scenarios, provide an API key if needed, and press **Generate
-   insights**. The task pane should render the narrative response, and the
-   `Insights` worksheet should contain the narrative plus an
-   `InsightsVarianceTable` when the checkbox is enabled.
-5. Repeat the workflow after modifying the underlying data to ensure the tables
-   update in-place.
-
-Automated integration coverage is provided by `tests/test_office_bridge.py`,
-which exercises the FastAPI endpoints and verifies persistence/aggregation
-behaviour.
