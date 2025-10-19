@@ -134,6 +134,12 @@ commands on macOS Excel:
 - **AI insights** – call `/insights/variance` to request a narrative summary of
   variance data and, optionally, populate an `Insights` worksheet.
 
+The bridge also exposes `/scenarios/list`, which returns the distinct scenario
+names stored in the warehouse. The Excel task pane fetches this list when the
+AI form loads and after each data import, populating dropdown selectors for the
+actual and budget scenarios. If the list cannot be retrieved, the form falls
+back to manual text entry so you can continue working offline.
+
 ### Start the HTTPS services
 
 Office on macOS requires HTTPS for both the task pane and backend. The

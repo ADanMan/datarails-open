@@ -13,6 +13,11 @@ const historyState = {
 
 const historyCache = new Map();
 
+const SCENARIO_DATALIST_ID = "scenario-options";
+const DEFAULT_ACTUAL_SCENARIO = "Actuals";
+const DEFAULT_BUDGET_SCENARIO = "Budget";
+let cachedScenarioOptions = [];
+
 function $(id) {
   return document.getElementById(id);
 }
@@ -67,6 +72,198 @@ function saveAiPreferences(preferences) {
   } else {
     window.localStorage.removeItem(AI_PREFERENCES_KEY);
   }
+}
+
+function normaliseScenarioList(values) {
+  const seen = new Set();
+  return values
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter((value) => {
+      if (!value) {
+        return false;
+      }
+      const key = value.toLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
+function updateScenarioDatalist(options) {
+  const datalist = document.getElementById(SCENARIO_DATALIST_ID);
+  if (!datalist) {
+    return;
+  }
+  datalist.textContent = "";
+  options.forEach((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    datalist.appendChild(option);
+  });
+}
+
+function setScenarioDatalistAttribute(element) {
+  if (!element || element.tagName === "SELECT") {
+    return;
+  }
+  if (document.getElementById(SCENARIO_DATALIST_ID)) {
+    element.setAttribute("list", SCENARIO_DATALIST_ID);
+  }
+}
+
+function replaceScenarioSelectWithInput(id, value, placeholder) {
+  const element = $(id);
+  if (!element) {
+    return;
+  }
+  if (element.tagName !== "SELECT") {
+    if (value !== undefined) {
+      element.value = value;
+    }
+    if (placeholder) {
+      element.placeholder = placeholder;
+    }
+    element.dataset.placeholder = placeholder || element.dataset.placeholder || "";
+    setScenarioDatalistAttribute(element);
+    return;
+  }
+  const input = document.createElement("input");
+  input.type = "text";
+  input.id = id;
+  input.className = element.className;
+  const resolvedPlaceholder =
+    placeholder || element.dataset.placeholder || element.getAttribute("placeholder") || "";
+  if (resolvedPlaceholder) {
+    input.placeholder = resolvedPlaceholder;
+    input.dataset.placeholder = resolvedPlaceholder;
+  }
+  input.value = value !== undefined ? value : element.value || "";
+  setScenarioDatalistAttribute(input);
+  element.replaceWith(input);
+}
+
+function ensureScenarioSelect(id) {
+  const element = $(id);
+  if (!element) {
+    return null;
+  }
+  if (element.tagName === "SELECT") {
+    return element;
+  }
+  const select = document.createElement("select");
+  select.id = id;
+  select.className = element.className;
+  const placeholder = element.dataset.placeholder || element.placeholder || "";
+  if (placeholder) {
+    select.dataset.placeholder = placeholder;
+  }
+  element.replaceWith(select);
+  return select;
+}
+
+function populateScenarioSelect(id, options, preferredValue, placeholder) {
+  const existingElement = $(id);
+  const previousValue = existingElement ? existingElement.value : "";
+  const select = ensureScenarioSelect(id);
+  if (!select) {
+    return;
+  }
+  const resolvedPlaceholder = placeholder || select.dataset.placeholder || "Select scenario";
+  select.dataset.placeholder = resolvedPlaceholder;
+  const targetValue = preferredValue || previousValue || "";
+  select.textContent = "";
+  const placeholderOption = document.createElement("option");
+  placeholderOption.value = "";
+  placeholderOption.textContent = resolvedPlaceholder;
+  placeholderOption.selected = !targetValue;
+  select.appendChild(placeholderOption);
+
+  const unique = new Set(options);
+  if (targetValue) {
+    unique.add(targetValue);
+  }
+  Array.from(unique)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+    .forEach((scenario) => {
+      const option = document.createElement("option");
+      option.value = scenario;
+      option.textContent = scenario;
+      select.appendChild(option);
+    });
+
+  if (targetValue) {
+    select.value = targetValue;
+    if (select.value !== targetValue) {
+      select.value = "";
+      placeholderOption.selected = true;
+    }
+  }
+}
+
+function applyScenarioOptions(options, preferences = {}) {
+  cachedScenarioOptions = options;
+  updateScenarioDatalist(options);
+  const actualPreference = preferences.actualScenario || DEFAULT_ACTUAL_SCENARIO;
+  const budgetPreference = preferences.budgetScenario || DEFAULT_BUDGET_SCENARIO;
+  if (!options.length) {
+    replaceScenarioSelectWithInput("insights-actual", actualPreference, "Actual scenario");
+    replaceScenarioSelectWithInput("insights-budget", budgetPreference, "Budget scenario");
+    return;
+  }
+  populateScenarioSelect(
+    "insights-actual",
+    options,
+    actualPreference,
+    "Select actual scenario"
+  );
+  populateScenarioSelect(
+    "insights-budget",
+    options,
+    budgetPreference,
+    "Select budget scenario"
+  );
+}
+
+async function fetchScenarioOptions() {
+  const result = await callBackend("/scenarios/list", { method: "GET" });
+  const items = Array.isArray(result?.items) ? result.items : [];
+  return normaliseScenarioList(items);
+}
+
+async function refreshScenarioOptions({ preferences = {}, showError = true } = {}) {
+  try {
+    const options = await fetchScenarioOptions();
+    applyScenarioOptions(options, preferences);
+    return options;
+  } catch (error) {
+    if (showError) {
+      log(`Failed to load scenarios from backend: ${error.message}`);
+    }
+    cachedScenarioOptions = [];
+    updateScenarioDatalist([]);
+    replaceScenarioSelectWithInput(
+      "insights-actual",
+      preferences.actualScenario || DEFAULT_ACTUAL_SCENARIO,
+      "Actual scenario"
+    );
+    replaceScenarioSelectWithInput(
+      "insights-budget",
+      preferences.budgetScenario || DEFAULT_BUDGET_SCENARIO,
+      "Budget scenario"
+    );
+    return [];
+  }
+}
+
+function getScenarioValue(id) {
+  const element = $(id);
+  if (!element) {
+    return "";
+  }
+  return element.value.trim();
 }
 
 async function callBackend(path, options = {}) {
@@ -207,6 +404,10 @@ async function loadData() {
     body: JSON.stringify(payload),
   });
   log(result.message || `Loaded ${result.rowsLoaded} rows.`);
+  const preferences = getAiPreferences();
+  preferences.actualScenario = getScenarioValue("insights-actual") || preferences.actualScenario;
+  preferences.budgetScenario = getScenarioValue("insights-budget") || preferences.budgetScenario;
+  await refreshScenarioOptions({ preferences, showError: false });
 }
 
 async function refreshReport() {
@@ -421,8 +622,8 @@ async function handleHistoryAction(action, item) {
 
 async function generateInsights() {
   const existingPreferences = getAiPreferences();
-  const actual = $("insights-actual").value.trim();
-  const budget = $("insights-budget").value.trim();
+  const actual = getScenarioValue("insights-actual");
+  const budget = getScenarioValue("insights-budget");
   if (!actual || !budget) {
     log("Both actual and budget scenarios are required.");
     return;
@@ -454,6 +655,8 @@ async function generateInsights() {
   }
 
   saveAiPreferences({
+    actualScenario: actual,
+    budgetScenario: budget,
     apiBase,
     model,
     mode,
@@ -497,7 +700,7 @@ async function generateInsights() {
   }
 }
 
-function initialiseAiForm() {
+async function initialiseAiForm() {
   const preferences = getAiPreferences();
   if (preferences.apiBase) {
     $("insights-api-base").value = preferences.apiBase;
@@ -511,6 +714,7 @@ function initialiseAiForm() {
   if (typeof preferences.usePersonalKey === "boolean") {
     $("insights-use-personal-key").checked = preferences.usePersonalKey;
   }
+  await refreshScenarioOptions({ preferences, showError: true });
 }
 
 async function saveSettings() {
@@ -530,7 +734,7 @@ Office.onReady(() => {
   $("backend-url").value = getBackendUrl();
   $("bridge-token").value = getBridgeToken();
   $("connection-status").textContent = `Using backend at ${getBackendUrl()}`;
-  initialiseAiForm();
+  initialiseAiForm().catch((error) => log(error.message));
   $("save-settings").addEventListener("click", () => {
     saveSettings().catch((error) => log(error.message));
   });

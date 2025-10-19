@@ -65,6 +65,25 @@ def test_load_csv_and_refresh_report(client: TestClient, tmp_path: Path) -> None
     assert report["rows"][0]["total"] == 1000.0
 
 
+def test_scenarios_list_returns_unique_sorted(client: TestClient, tmp_path: Path) -> None:
+    source = tmp_path / "scenarios.csv"
+    _write_sample_csv(source)
+
+    client.post(
+        "/load-data",
+        json={"path": str(source), "source": "csv", "scenario": "Actuals"},
+    )
+    client.post(
+        "/load-data",
+        json={"path": str(source), "source": "csv", "scenario": "Budget"},
+    )
+
+    response = client.get("/scenarios/list")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == {"items": ["Actuals", "Budget"]}
+
+
 def test_export_scenario_persists_rows(client: TestClient, tmp_path: Path) -> None:
     source = tmp_path / "base.csv"
     _write_sample_csv(source)

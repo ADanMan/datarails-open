@@ -206,6 +206,14 @@ class BridgeService:
         ]
         return {"scenario": scenario_name, "rows": serialised}
 
+    def list_scenarios(self) -> list[str]:
+        with closing(self._connection()) as conn:
+            cursor = conn.execute(
+                "SELECT DISTINCT scenario FROM financial_facts "
+                "WHERE scenario IS NOT NULL ORDER BY scenario"
+            )
+            return [value for (value,) in cursor.fetchall()]
+
     def export_scenario(self, request: ScenarioExportRequest) -> dict:
         adjustment = scenario.ScenarioAdjustment(
             department=request.department,
@@ -427,6 +435,10 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
     @app.post("/scenarios/export")
     def scenarios_export(request: ScenarioExportRequest):
         return service.export_scenario(request)
+
+    @app.get("/scenarios/list")
+    def scenarios_list():
+        return {"items": service.list_scenarios()}
 
     @app.post("/insights/variance")
     def insights_variance(request: InsightsRequest):
