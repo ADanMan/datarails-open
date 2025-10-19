@@ -11,6 +11,8 @@ the command line.
 - **Spreadsheet ingestion** from CSV or Excel workbooks via the `load-data` CLI.
 - **Department summaries** with totals per period (`report`).
 - **Variance analysis** between budget and actual scenarios (`variance`).
+- **Narrative insights** that summarise scenario variance using OpenAI-compatible
+  APIs (`insights`).
 - **Scenario modelling** that applies percentage adjustments and stores or
   exports the resulting dataset (`build-scenario`).
 
@@ -46,10 +48,47 @@ python -m app.main --db financials.db variance --actual actual --budget budget
 # Build a scenario with a 5% increase for Sales department and persist it
 python -m app.main --db financials.db build-scenario --source budget --target plan-plus-5 \
   --adjustment 0.05 --department Sales --output data/plan-plus-5.csv
+
+# Generate AI insights using environment-configured credentials
+python -m app.main --db financials.db insights --actual actual --budget budget
 ```
 
 > Tip: after `pip install -e .` you can also use the console script `datarails-open`
 > instead of `python -m app.main` for shorter commands.
+
+## AI-powered insights
+
+The `insights` sub-command sends a variance report to an OpenAI-compatible text
+generation endpoint and prints or stores the returned narrative summary.
+
+- Provide credentials via CLI flags (`--api-key`, `--api-base`, `--model`) or
+  environment variables (`DATARAILS_OPEN_API_KEY`, `DATARAILS_OPEN_API_BASE`,
+  `DATARAILS_OPEN_MODEL`).
+- Choose between the legacy chat completions endpoint and the modern responses
+  endpoint using `--api-mode` (or `DATARAILS_OPEN_API_MODE`). The helper sends
+  compatible payloads for both so you can migrate gradually.
+- When `--output` is omitted the insights are written to stdout. Combine with
+  `--output` and `--format json` to persist both the narrative and the
+  underlying rows in a machine-readable file.
+
+Example:
+
+```bash
+export DATARAILS_OPEN_API_KEY="sk-..."
+python -m app.main --db financials.db insights --actual actual --budget budget \
+  --model gpt-4o-mini --api-mode responses --output insights.txt
+```
+
+### Security guidance
+
+- Never commit API keys or service endpoints to source control. Prefer
+  ephemeral environment variables or a secrets manager provided by your shell,
+  container runtime, or CI system.
+- If you need to use a `.env` file for local development, limit file
+  permissions (`chmod 600 .env`) and add the file to `.gitignore`.
+- Rotate credentials regularly and revoke keys that are no longer needed.
+- Review your provider's data retention policy before sending sensitive
+  financial information and consider masking values where possible.
 
 ## Data format
 
@@ -75,8 +114,8 @@ pip install -e .[dev]
 pytest
 ```
 
-The runtime depends on `openpyxl` for Excel support and `pytest` is used for
-tests, keeping the remainder of the MVP within the Python standard library.
+The runtime depends on `openpyxl` for Excel support and `httpx` for the
+OpenAI-compatible client. `pytest` powers the test suite.
 
 ## Excel add-in bridge
 

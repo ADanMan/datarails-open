@@ -3,12 +3,18 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
+import os
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from . import database, excel_loader, loader, reporting, scenario
+from . import ai, database, excel_loader, loader, reporting, scenario
 
 DEFAULT_DB = Path("financials.db")
+API_KEY_ENV = "DATARAILS_OPEN_API_KEY"
+API_BASE_ENV = "DATARAILS_OPEN_API_BASE"
+MODEL_ENV = "DATARAILS_OPEN_MODEL"
+API_MODE_ENV = "DATARAILS_OPEN_API_MODE"
 
 
 def _ensure_db(db_path: Path) -> None:
@@ -164,6 +170,61 @@ def build_scenario_command(args: argparse.Namespace) -> None:
         _print_table(["period", "department", "account", "value", "currency"], display_rows)
 
 
+def insights_command(args: argparse.Namespace) -> None:
+    api_key = args.api_key or os.environ.get(API_KEY_ENV)
+    if not api_key:
+        raise SystemExit(
+            "An API key must be provided via --api-key or the "
+            f"{API_KEY_ENV} environment variable."
+        )
+
+    api_base = args.api_base or os.environ.get(API_BASE_ENV) or "https://api.openai.com/v1"
+    model = args.model or os.environ.get(MODEL_ENV) or "gpt-4o-mini"
+    mode_value = args.api_mode or os.environ.get(API_MODE_ENV, "chat-completions")
+    if mode_value not in {"chat-completions", "responses"}:
+        raise SystemExit(
+            "API mode must be either 'chat-completions' or 'responses' (received "
+            f"{mode_value!r})."
+        )
+    mode = "responses" if mode_value == "responses" else "chat_completions"
+
+    conn = _open_connection(args.db)
+    try:
+        rows = reporting.variance_report(
+            conn,
+            actual_scenario=args.actual,
+            budget_scenario=args.budget,
+        )
+    finally:
+        conn.close()
+
+    structured_rows = [
+        {
+            "period": period,
+            "department": department,
+            "account": account,
+            "actual": actual,
+            "budget": budget,
+            "variance": variance,
+        }
+        for period, department, account, actual, budget, variance in rows
+    ]
+
+    config = ai.AIConfig(api_key=api_key, api_base=api_base, model=model, mode=mode)
+    insights = ai.generate_insights(structured_rows, config)
+
+    if args.output:
+        output_path = Path(args.output)
+        if args.format == "json":
+            payload = {"insights": insights, "rows": structured_rows}
+            output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        else:
+            output_path.write_text(insights, encoding="utf-8")
+        print(f"Insights written to {output_path}")
+    else:
+        print(insights)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Open-source FP&A console inspired by Datarails")
     parser.add_argument("--db", type=Path, default=DEFAULT_DB, help="Location of the SQLite database")
@@ -214,6 +275,53 @@ def build_parser() -> argparse.ArgumentParser:
     )
     scenario_parser.add_argument("--output", help="Optional path to export the scenario as CSV")
     scenario_parser.set_defaults(func=build_scenario_command)
+
+    insights_parser = subparsers.add_parser(
+        "insights",
+        help=(
+            "Generate narrative insights for variance between two scenarios using an "
+            "OpenAI-compatible API"
+        ),
+    )
+    insights_parser.add_argument("--actual", required=True, help="Scenario representing actuals")
+    insights_parser.add_argument("--budget", required=True, help="Scenario representing budget")
+    insights_parser.add_argument(
+        "--api-key",
+        help=(
+            "API key for the AI service (defaults to the "
+            f"{API_KEY_ENV} environment variable)"
+        ),
+    )
+    insights_parser.add_argument(
+        "--api-base",
+        help=(
+            "Base URL for the API endpoint (defaults to the "
+            f"{API_BASE_ENV} environment variable or https://api.openai.com/v1)"
+        ),
+    )
+    insights_parser.add_argument(
+        "--model",
+        help=(
+            "Model identifier to request (defaults to the "
+            f"{MODEL_ENV} environment variable or gpt-4o-mini)"
+        ),
+    )
+    insights_parser.add_argument(
+        "--api-mode",
+        choices=["chat-completions", "responses"],
+        help=(
+            "Endpoint style to use for the AI request (defaults to the "
+            f"{API_MODE_ENV} environment variable or chat-completions)"
+        ),
+    )
+    insights_parser.add_argument("--output", help="Optional path to write insights to disk")
+    insights_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format when using --output (default: text)",
+    )
+    insights_parser.set_defaults(func=insights_command)
 
     return parser
 
