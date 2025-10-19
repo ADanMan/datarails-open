@@ -13,6 +13,7 @@ dependencies = [
     "openpyxl>=3.1,<4",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.23",
+    "httpx>=0.24,<1",
 ]
 
 [tool.setuptools]
@@ -21,7 +22,6 @@ packages = ["app"]
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
-    "httpx>=0.24,<1",
 ]
 
 [project.scripts]
