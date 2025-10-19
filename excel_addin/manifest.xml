@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+           xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+           xsi:type="TaskPaneApp">
+  <Id>0f55fbe4-8e4f-46da-8bb0-50107a220114</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>datarails-open</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Datarails Open Excel Add-in"/>
+  <Description DefaultValue="Ribbon commands for loading and reporting FP&amp;A data from the datarails-open backend."/>
+  <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.svg"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-80.svg"/>
+  <SupportUrl DefaultValue="https://localhost:3000/index.html"/>
+  <AppDomains>
+    <AppDomain>https://localhost:3000</AppDomain>
+    <AppDomain>https://localhost:8000</AppDomain>
+    <AppDomain>https://127.0.0.1:3000</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Workbook"/>
+  </Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:3000/index.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xsi:type="ov:VersionOverrides" Version="1.0">
+    <ov:Hosts>
+      <ov:Host xsi:type="ov:Workbook">
+        <ov:DesktopFormFactor>
+          <ov:GetStarted>
+            <ov:LearnMoreUrl resid="residGetStartedUrl"/>
+          </ov:GetStarted>
+          <ov:FunctionFile resid="residCommandsHtml"/>
+          <ov:ExtensionPoint xsi:type="ov:PrimaryCommandSurface">
+            <ov:CustomTab id="DatarailsOpen.Tab">
+              <ov:Group id="DatarailsOpen.Group">
+                <ov:Label resid="residGroupLabel"/>
+                <ov:Control xsi:type="ov:Button" id="DatarailsOpen.LoadData">
+                  <ov:Label resid="residLoadDataLabel"/>
+                  <ov:Supertip>
+                    <ov:Title resid="residLoadDataLabel"/>
+                    <ov:Description resid="residLoadDataTooltip"/>
+                  </ov:Supertip>
+                  <ov:Icon>
+                    <ov:bt:Image size="16" resid="residIcon16"/>
+                    <ov:bt:Image size="32" resid="residIcon32"/>
+                  </ov:Icon>
+                  <ov:Action xsi:type="ov:ShowTaskpane">
+                    <ov:TaskpaneId>Taskpane.DatarailsOpen</ov:TaskpaneId>
+                  </ov:Action>
+                </ov:Control>
+                <ov:Control xsi:type="ov:Button" id="DatarailsOpen.RefreshReports">
+                  <ov:Label resid="residRefreshLabel"/>
+                  <ov:Supertip>
+                    <ov:Title resid="residRefreshLabel"/>
+                    <ov:Description resid="residRefreshTooltip"/>
+                  </ov:Supertip>
+                  <ov:Icon>
+                    <ov:bt:Image size="16" resid="residIcon16"/>
+                    <ov:bt:Image size="32" resid="residIcon32"/>
+                  </ov:Icon>
+                  <ov:Action xsi:type="ov:ShowTaskpane">
+                    <ov:TaskpaneId>Taskpane.DatarailsOpen</ov:TaskpaneId>
+                  </ov:Action>
+                </ov:Control>
+                <ov:Control xsi:type="ov:Button" id="DatarailsOpen.ExportScenario">
+                  <ov:Label resid="residExportLabel"/>
+                  <ov:Supertip>
+                    <ov:Title resid="residExportLabel"/>
+                    <ov:Description resid="residExportTooltip"/>
+                  </ov:Supertip>
+                  <ov:Icon>
+                    <ov:bt:Image size="16" resid="residIcon16"/>
+                    <ov:bt:Image size="32" resid="residIcon32"/>
+                  </ov:Icon>
+                  <ov:Action xsi:type="ov:ShowTaskpane">
+                    <ov:TaskpaneId>Taskpane.DatarailsOpen</ov:TaskpaneId>
+                  </ov:Action>
+                </ov:Control>
+              </ov:Group>
+              <ov:Label resid="residTabLabel"/>
+            </ov:CustomTab>
+          </ov:ExtensionPoint>
+          <ov:ExtensionPoint xsi:type="ov:Taskpane">
+            <ov:TaskpaneId>Taskpane.DatarailsOpen</ov:TaskpaneId>
+            <ov:SourceLocation resid="residTaskpaneUrl"/>
+            <ov:Title resid="residTaskpaneTitle"/>
+            <ov:SupportPinning>true</ov:SupportPinning>
+          </ov:ExtensionPoint>
+        </ov:DesktopFormFactor>
+      </ov:Host>
+    </ov:Hosts>
+    <ov:Resources>
+      <ov:bt:Images>
+        <ov:bt:Image id="residIcon16" DefaultValue="https://localhost:3000/assets/icon-32.svg"/>
+        <ov:bt:Image id="residIcon32" DefaultValue="https://localhost:3000/assets/icon-80.svg"/>
+      </ov:bt:Images>
+      <ov:bt:Urls>
+        <ov:bt:Url id="residTaskpaneUrl" DefaultValue="https://localhost:3000/index.html"/>
+        <ov:bt:Url id="residCommandsHtml" DefaultValue="https://localhost:3000/commands.html"/>
+        <ov:bt:Url id="residGetStartedUrl" DefaultValue="https://learn.microsoft.com/office/dev/add-ins/"/>
+      </ov:bt:Urls>
+      <ov:bt:ShortStrings>
+        <ov:bt:String id="residTabLabel" DefaultValue="Datarails"/>
+        <ov:bt:String id="residGroupLabel" DefaultValue="Operations"/>
+        <ov:bt:String id="residLoadDataLabel" DefaultValue="Load data"/>
+        <ov:bt:String id="residRefreshLabel" DefaultValue="Refresh reports"/>
+        <ov:bt:String id="residExportLabel" DefaultValue="Export scenario"/>
+        <ov:bt:String id="residTaskpaneTitle" DefaultValue="Datarails Controls"/>
+      </ov:bt:ShortStrings>
+      <ov:bt:LongStrings>
+        <ov:bt:String id="residLoadDataTooltip" DefaultValue="Import CSV or Excel files into the shared SQLite database."/>
+        <ov:bt:String id="residRefreshTooltip" DefaultValue="Re-run the reporting query and update the current workbook."/>
+        <ov:bt:String id="residExportTooltip" DefaultValue="Generate a scenario adjustment and write it back to Excel."/>
+      </ov:bt:LongStrings>
+    </ov:Resources>
+  </VersionOverrides>
+</OfficeApp>
