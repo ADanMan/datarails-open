@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Datarails Controls</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <script defer src="taskpane.js"></script>
+  </head>
+  <body class="ms-Fabric">
+    <main class="container">
+      <h1>Datarails Controls</h1>
+      <section>
+        <h2>Backend connection</h2>
+        <label class="form-label" for="backend-url">Bridge base URL</label>
+        <input id="backend-url" type="url" placeholder="https://localhost:8000" />
+        <button id="save-settings" type="button">Save connection</button>
+        <p id="connection-status" class="status"></p>
+      </section>
+      <section>
+        <h2>Load data</h2>
+        <label class="form-label" for="load-path">File path (.csv or .xlsx)</label>
+        <input id="load-path" type="text" placeholder="/Users/example/Downloads/actuals.csv" />
+        <label class="form-label" for="load-source">Source name</label>
+        <input id="load-source" type="text" value="imports" />
+        <label class="form-label" for="load-scenario">Scenario name</label>
+        <input id="load-scenario" type="text" value="Actuals" />
+        <label class="form-label" for="load-sheets">Sheets (comma separated, optional)</label>
+        <input id="load-sheets" type="text" placeholder="Finance,Operations" />
+        <label class="form-label" for="load-tables">Tables (comma separated, optional)</label>
+        <input id="load-tables" type="text" placeholder="Table1" />
+        <button id="load-data" type="button">Load data</button>
+      </section>
+      <section>
+        <h2>Refresh department summary</h2>
+        <label class="form-label" for="report-scenario">Scenario (leave blank for all)</label>
+        <input id="report-scenario" type="text" placeholder="Actuals" />
+        <button id="refresh-report" type="button">Refresh report table</button>
+      </section>
+      <section>
+        <h2>Export scenario</h2>
+        <label class="form-label" for="scenario-source">Source scenario</label>
+        <input id="scenario-source" type="text" value="Actuals" />
+        <label class="form-label" for="scenario-target">Target scenario</label>
+        <input id="scenario-target" type="text" value="Forecast" />
+        <label class="form-label" for="scenario-department">Department filter (optional)</label>
+        <input id="scenario-department" type="text" placeholder="Sales" />
+        <label class="form-label" for="scenario-account">Account filter (optional)</label>
+        <input id="scenario-account" type="text" placeholder="Revenue" />
+        <label class="form-label" for="scenario-adjustment">Percentage change (e.g. 0.1 for +10%)</label>
+        <input id="scenario-adjustment" type="number" step="0.01" value="0.1" />
+        <label class="form-checkbox">
+          <input id="scenario-persist" type="checkbox" checked /> Persist results to the database
+        </label>
+        <button id="export-scenario" type="button">Export scenario to worksheet</button>
+      </section>
+      <section>
+        <h2>Status</h2>
+        <pre id="status-log" class="log" aria-live="polite"></pre>
+      </section>
+    </main>
+  </body>
+</html>

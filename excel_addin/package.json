@@ -1,0 +1,13 @@
+{
+  "name": "datarails-open-excel-addin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Task pane assets for the datarails-open Excel add-in",
+  "scripts": {
+    "dev": "http-server ./taskpane -S -C ./certs/devcert.pem -K ./certs/devcert-key.pem -p 3000",
+    "lint": "echo 'No lint step configured'"
+  },
+  "dependencies": {
+    "http-server": "^14.1.1"
+  }
+}
