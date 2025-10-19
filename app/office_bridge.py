@@ -10,7 +10,16 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import database, excel_loader, loader, reporting, scenario
+from . import ai, database, excel_loader, loader, reporting, scenario
+from .settings import (
+    API_BASE_ENV,
+    API_KEY_ENV,
+    API_MODE_ENV,
+    MODEL_ENV,
+    DEFAULT_API_BASE,
+    DEFAULT_API_MODE,
+    DEFAULT_MODEL,
+)
 
 DEFAULT_DB_PATH = Path(os.environ.get("DATARAILS_DB", "financials.db"))
 
@@ -36,6 +45,25 @@ class ScenarioExportRequest(BaseModel):
     account: Optional[str] = None
     percentage_change: float = Field(..., alias="percentageChange")
     persist: bool = True
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class AISettings(BaseModel):
+    api_key: Optional[str] = Field(default=None, alias="apiKey")
+    api_base: Optional[str] = Field(default=None, alias="apiBase")
+    model: Optional[str] = None
+    mode: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class InsightsRequest(BaseModel):
+    actual_scenario: str = Field(..., alias="actualScenario")
+    budget_scenario: str = Field(..., alias="budgetScenario")
+    prompt: Optional[str] = None
+    include_rows: bool = Field(False, alias="includeRows")
+    api: Optional[AISettings] = None
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -169,6 +197,61 @@ class BridgeService:
             "targetScenario": request.target_scenario,
         }
 
+    def generate_insights(self, request: InsightsRequest) -> dict:
+        api_settings = request.api
+        api_key = (api_settings.api_key if api_settings else None) or os.environ.get(API_KEY_ENV)
+        if not api_key:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "An API key is required to generate insights. Provide one via "
+                    "api.apiKey or the "
+                    f"{API_KEY_ENV} environment variable."
+                ),
+            )
+
+        api_base = (api_settings.api_base if api_settings else None) or os.environ.get(API_BASE_ENV) or DEFAULT_API_BASE
+        model = (api_settings.model if api_settings else None) or os.environ.get(MODEL_ENV) or DEFAULT_MODEL
+        mode_value = (api_settings.mode if api_settings else None) or os.environ.get(API_MODE_ENV) or DEFAULT_API_MODE
+        if mode_value not in {"chat-completions", "responses"}:
+            raise HTTPException(
+                status_code=400,
+                detail="API mode must be either 'chat-completions' or 'responses'.",
+            )
+        mode = "responses" if mode_value == "responses" else "chat_completions"
+
+        with closing(self._connection()) as conn:
+            rows = reporting.variance_report(
+                conn,
+                actual_scenario=request.actual_scenario,
+                budget_scenario=request.budget_scenario,
+            )
+        structured_rows = reporting.serialise_variance_rows(rows)
+
+        config = ai.AIConfig(api_key=api_key, api_base=api_base, model=model, mode=mode)
+        try:
+            insights_text = ai.generate_insights(
+                structured_rows,
+                config,
+                prompt=request.prompt,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except Exception as exc:  # pragma: no cover - safeguard against unexpected errors
+            raise HTTPException(status_code=502, detail=f"AI request failed: {exc}") from exc
+
+        payload: dict[str, object] = {
+            "actualScenario": request.actual_scenario,
+            "budgetScenario": request.budget_scenario,
+            "insights": insights_text,
+            "rowCount": len(structured_rows),
+        }
+        if request.include_rows:
+            payload["rows"] = structured_rows
+        return payload
+
 
 def create_app(database_path: Path | str | None = None) -> FastAPI:
     """Create and configure the FastAPI application."""
@@ -198,6 +281,10 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
     @app.post("/scenarios/export")
     def scenarios_export(request: ScenarioExportRequest):
         return service.export_scenario(request)
+
+    @app.post("/insights/variance")
+    def insights_variance(request: InsightsRequest):
+        return service.generate_insights(request)
 
     return app
 

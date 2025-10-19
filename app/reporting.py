@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from sqlite3 import Connection
-from typing import List, Tuple
+from typing import List, Sequence, Tuple
 
 
 def summarise_by_department(
@@ -61,4 +61,22 @@ def variance_report(
     return [
         (row["period"], row["department"], row["account"], float(row["actual"]), float(row["budget"]), float(row["variance"]))
         for row in rows
+    ]
+
+
+def serialise_variance_rows(
+    rows: Sequence[Tuple[str, str, str, float, float, float]]
+) -> List[dict[str, object]]:
+    """Convert tuples from :func:`variance_report` into dictionaries."""
+
+    return [
+        {
+            "period": period,
+            "department": department,
+            "account": account,
+            "actual": actual,
+            "budget": budget,
+            "variance": variance,
+        }
+        for period, department, account, actual, budget, variance in rows
     ]
