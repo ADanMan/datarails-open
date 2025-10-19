@@ -33,7 +33,7 @@
         <label class="form-label" for="load-source">Source name</label>
         <input id="load-source" type="text" value="imports" />
         <label class="form-label" for="load-scenario">Scenario name</label>
-        <input id="load-scenario" type="text" value="Actuals" />
+        <input id="load-scenario" type="text" value="Actuals" list="scenario-options" />
         <label class="form-label" for="load-sheets">Sheets (comma separated, optional)</label>
         <input id="load-sheets" type="text" placeholder="Finance,Operations" />
         <label class="form-label" for="load-tables">Tables (comma separated, optional)</label>
@@ -43,15 +43,15 @@
       <section>
         <h2>Refresh department summary</h2>
         <label class="form-label" for="report-scenario">Scenario (leave blank for all)</label>
-        <input id="report-scenario" type="text" placeholder="Actuals" />
+        <input id="report-scenario" type="text" placeholder="Actuals" list="scenario-options" />
         <button id="refresh-report" type="button">Refresh report table</button>
       </section>
       <section>
         <h2>Export scenario</h2>
         <label class="form-label" for="scenario-source">Source scenario</label>
-        <input id="scenario-source" type="text" value="Actuals" />
+        <input id="scenario-source" type="text" value="Actuals" list="scenario-options" />
         <label class="form-label" for="scenario-target">Target scenario</label>
-        <input id="scenario-target" type="text" value="Forecast" />
+        <input id="scenario-target" type="text" value="Forecast" list="scenario-options" />
         <label class="form-label" for="scenario-department">Department filter (optional)</label>
         <input id="scenario-department" type="text" placeholder="Sales" />
         <label class="form-label" for="scenario-account">Account filter (optional)</label>
@@ -70,9 +70,15 @@
           indicating whether to use a personal key.
         </p>
         <label class="form-label" for="insights-actual">Actual scenario</label>
-        <input id="insights-actual" type="text" value="Actuals" />
+        <select id="insights-actual" data-placeholder="Select actual scenario">
+          <option value="">Select actual scenario</option>
+          <option value="Actuals" selected>Actuals</option>
+        </select>
         <label class="form-label" for="insights-budget">Budget scenario</label>
-        <input id="insights-budget" type="text" value="Budget" />
+        <select id="insights-budget" data-placeholder="Select budget scenario">
+          <option value="">Select budget scenario</option>
+          <option value="Budget" selected>Budget</option>
+        </select>
         <label class="form-label" for="insights-prompt">Custom prompt (optional)</label>
         <textarea
           id="insights-prompt"
@@ -108,11 +114,13 @@
               id="history-actual"
               type="text"
               placeholder="Filter by actual scenario"
+              list="scenario-options"
             />
             <input
               id="history-budget"
               type="text"
               placeholder="Filter by budget scenario"
+              list="scenario-options"
             />
             <input
               id="history-search"
@@ -134,5 +142,6 @@
         <pre id="status-log" class="log" aria-live="polite"></pre>
       </section>
     </main>
+    <datalist id="scenario-options"></datalist>
   </body>
 </html>
