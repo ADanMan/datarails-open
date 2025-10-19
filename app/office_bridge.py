@@ -13,6 +13,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import ai, database, excel_loader, loader, reporting, scenario
+from . import insights_repository
 from .settings import (
     API_BASE_ENV,
     API_KEY_ENV,
@@ -121,7 +122,9 @@ class BridgeService:
 
     def _connection(self):
         _ensure_database(self.database_path)
-        return database.get_connection(self.database_path)
+        conn = database.get_connection(self.database_path)
+        database.run_migrations(conn)
+        return conn
 
     def _get_cipher(self) -> Fernet:
         if self._cipher is None:
@@ -306,15 +309,69 @@ class BridgeService:
         except Exception as exc:  # pragma: no cover - safeguard against unexpected errors
             raise HTTPException(status_code=502, detail=f"AI request failed: {exc}") from exc
 
+        row_count = len(structured_rows)
+
+        with closing(self._connection()) as conn:
+            repository = insights_repository.InsightsRepository(conn)
+            repository.create(
+                actual=request.actual_scenario,
+                budget=request.budget_scenario,
+                prompt=request.prompt,
+                insights=insights_text,
+                row_count=row_count,
+            )
+
         payload: dict[str, object] = {
             "actualScenario": request.actual_scenario,
             "budgetScenario": request.budget_scenario,
             "insights": insights_text,
-            "rowCount": len(structured_rows),
+            "rowCount": row_count,
         }
         if request.include_rows:
             payload["rows"] = structured_rows
         return payload
+
+    def get_insights_history(
+        self,
+        *,
+        actual: str | None,
+        budget: str | None,
+        prompt: str | None,
+        page: int,
+        page_size: int,
+    ) -> dict[str, object]:
+        page = max(page, 1)
+        page_size = max(1, min(page_size, 100))
+        offset = (page - 1) * page_size
+
+        with closing(self._connection()) as conn:
+            repository = insights_repository.InsightsRepository(conn)
+            records, total = repository.list(
+                actual=actual,
+                budget=budget,
+                prompt=prompt,
+                limit=page_size,
+                offset=offset,
+            )
+
+        items = [
+            {
+                "id": record.id,
+                "actual": record.actual,
+                "budget": record.budget,
+                "prompt": record.prompt,
+                "insights": record.insights,
+                "rowCount": record.row_count,
+                "createdAt": record.created_at,
+            }
+            for record in records
+        ]
+        return {
+            "items": items,
+            "page": page,
+            "pageSize": page_size,
+            "total": total,
+        }
 
 
 def create_app(database_path: Path | str | None = None) -> FastAPI:
@@ -374,6 +431,22 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
     @app.post("/insights/variance")
     def insights_variance(request: InsightsRequest):
         return service.generate_insights(request)
+
+    @app.get("/insights/history")
+    def insights_history(
+        page: int = Query(default=1, ge=1),
+        page_size: int = Query(default=20, ge=1, le=100, alias="pageSize"),
+        actual: str | None = Query(default=None),
+        budget: str | None = Query(default=None),
+        prompt: str | None = Query(default=None),
+    ):
+        return service.get_insights_history(
+            actual=actual,
+            budget=budget,
+            prompt=prompt,
+            page=page,
+            page_size=page_size,
+        )
 
     @app.post("/settings/api-key", status_code=204)
     def settings_api_key(

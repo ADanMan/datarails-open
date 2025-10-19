@@ -234,6 +234,70 @@ def test_generate_insights_route_returns_summary(
     assert config.model == "gpt-test"
     assert config.mode == "responses"
 
+    history = client.get("/insights/history").json()
+    assert history["total"] == 1
+    assert history["items"][0]["prompt"] == "Explain the movement"
+    assert history["items"][0]["actual"] == "Actuals"
+    assert history["items"][0]["budget"] == "Budget"
+    assert history["items"][0]["rowCount"] == 1
+
+
+def test_insights_history_filters_and_pagination(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, tmp_path: Path
+) -> None:
+    source = tmp_path / "data.csv"
+    _write_sample_csv(source)
+
+    client.post(
+        "/load-data",
+        json={"path": str(source), "source": "csv", "scenario": "Actuals"},
+    )
+    client.post(
+        "/load-data",
+        json={"path": str(source), "source": "csv", "scenario": "Budget"},
+    )
+
+    def fake_generate(rows, config, prompt=None):  # type: ignore[no-untyped-def]
+        return f"Summary for {prompt or 'default'}"
+
+    monkeypatch.setattr("app.office_bridge.ai.generate_insights", fake_generate)
+
+    prompts = ["Alpha", "Beta", "Gamma"]
+    for prompt in prompts:
+        response = client.post(
+            "/insights/variance",
+            json={
+                "actualScenario": "Actuals",
+                "budgetScenario": "Budget",
+                "prompt": prompt,
+                "api": {"apiKey": "test-key"},
+            },
+        )
+        assert response.status_code == 200
+
+    first_page = client.get(
+        "/insights/history",
+        params={"page": 1, "pageSize": 2},
+    ).json()
+    assert first_page["page"] == 1
+    assert first_page["pageSize"] == 2
+    assert first_page["total"] == 3
+    assert len(first_page["items"]) == 2
+
+    second_page = client.get(
+        "/insights/history",
+        params={"page": 2, "pageSize": 2},
+    ).json()
+    assert second_page["page"] == 2
+    assert len(second_page["items"]) == 1
+
+    beta_only = client.get(
+        "/insights/history",
+        params={"actual": "Actuals", "prompt": "Beta"},
+    ).json()
+    assert beta_only["total"] == 1
+    assert beta_only["items"][0]["prompt"] == "Beta"
+
 
 def test_store_api_key_and_generate_without_payload(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, tmp_path: Path

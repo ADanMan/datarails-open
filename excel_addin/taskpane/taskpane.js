@@ -3,6 +3,15 @@
 const SETTINGS_KEY = "datarails-open-backend";
 const AI_PREFERENCES_KEY = "datarails-open-ai-preferences";
 const BRIDGE_TOKEN_KEY = "datarails-open-bridge-token";
+const HISTORY_PAGE_SIZE = 10;
+
+const historyState = {
+  page: 1,
+  pageSize: HISTORY_PAGE_SIZE,
+  total: 0,
+};
+
+const historyCache = new Map();
 
 function $(id) {
   return document.getElementById(id);
@@ -83,6 +92,27 @@ async function callBackend(path, options = {}) {
     return null;
   }
   return response.json();
+}
+
+function formatTimestamp(value) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+}
+
+function summariseText(text, limit = 220) {
+  if (!text) {
+    return "";
+  }
+  if (text.length <= limit) {
+    return text;
+  }
+  return `${text.slice(0, limit - 1).trim()}…`;
 }
 
 async function storeApiKeyOnBridge(apiKey) {
@@ -263,6 +293,132 @@ async function writeInsightsToWorksheet(result) {
   });
 }
 
+function updateHistoryPagination() {
+  const infoEl = $("history-page-info");
+  const prevEl = $("history-prev");
+  const nextEl = $("history-next");
+  if (!infoEl || !prevEl || !nextEl) {
+    return;
+  }
+  const { page, pageSize, total } = historyState;
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = total === 0 ? 0 : Math.min(page * pageSize, total);
+  infoEl.textContent = total ? `${start}-${end} of ${total}` : "No history yet";
+  prevEl.disabled = page <= 1;
+  nextEl.disabled = page * pageSize >= total;
+}
+
+function renderHistoryItems(items) {
+  const listEl = $("history-list");
+  if (!listEl) {
+    return;
+  }
+  listEl.textContent = "";
+  if (!items.length) {
+    const empty = document.createElement("li");
+    empty.className = "history-empty";
+    empty.textContent = "No saved insights found.";
+    listEl.appendChild(empty);
+    return;
+  }
+
+  items.forEach((item) => {
+    historyCache.set(item.id, item);
+    const li = document.createElement("li");
+    li.className = "history-item";
+    li.dataset.historyId = String(item.id);
+
+    const header = document.createElement("div");
+    header.className = "history-item-header";
+
+    const title = document.createElement("strong");
+    title.textContent = `${item.actual} vs ${item.budget}`;
+    header.appendChild(title);
+
+    const timeEl = document.createElement("time");
+    timeEl.dateTime = item.createdAt || "";
+    timeEl.textContent = formatTimestamp(item.createdAt);
+    header.appendChild(timeEl);
+
+    li.appendChild(header);
+
+    const prompt = document.createElement("p");
+    prompt.textContent = item.prompt ? `Prompt: ${item.prompt}` : "Prompt: (none)";
+    li.appendChild(prompt);
+
+    const summary = document.createElement("p");
+    summary.textContent = summariseText(item.insights);
+    li.appendChild(summary);
+
+    const actions = document.createElement("div");
+    actions.className = "history-actions";
+
+    const insertBtn = document.createElement("button");
+    insertBtn.type = "button";
+    insertBtn.dataset.historyAction = "insert";
+    insertBtn.dataset.historyId = String(item.id);
+    insertBtn.textContent = "Insert to sheet";
+    actions.appendChild(insertBtn);
+
+    const reuseBtn = document.createElement("button");
+    reuseBtn.type = "button";
+    reuseBtn.dataset.historyAction = "prefill";
+    reuseBtn.dataset.historyId = String(item.id);
+    reuseBtn.textContent = "Use in form";
+    actions.appendChild(reuseBtn);
+
+    li.appendChild(actions);
+    listEl.appendChild(li);
+  });
+}
+
+async function loadHistory(page = historyState.page) {
+  const actual = $("history-actual")?.value.trim();
+  const budget = $("history-budget")?.value.trim();
+  const search = $("history-search")?.value.trim();
+
+  const params = new URLSearchParams();
+  params.set("page", String(page));
+  params.set("pageSize", String(historyState.pageSize));
+  if (actual) params.set("actual", actual);
+  if (budget) params.set("budget", budget);
+  if (search) params.set("prompt", search);
+
+  const result = await callBackend(`/insights/history?${params.toString()}`, {
+    method: "GET",
+  });
+
+  const payload = result || {};
+
+  historyState.page = payload.page || 1;
+  historyState.pageSize = payload.pageSize || HISTORY_PAGE_SIZE;
+  historyState.total = payload.total || 0;
+  historyCache.clear();
+  renderHistoryItems(payload.items || []);
+  updateHistoryPagination();
+}
+
+async function handleHistoryAction(action, item) {
+  if (action === "insert") {
+    log(`Inserting insights for ${item.actual} vs ${item.budget}...`);
+    await writeInsightsToWorksheet({
+      actualScenario: item.actual,
+      budgetScenario: item.budget,
+      insights: item.insights,
+      rows: [],
+    });
+    log("Insights written to worksheet from history entry.");
+    return;
+  }
+  if (action === "prefill") {
+    $("insights-actual").value = item.actual;
+    $("insights-budget").value = item.budget;
+    $("insights-prompt").value = item.prompt || "";
+    $("insights-prompt").focus();
+    log("Loaded history entry into the insights form. Update the prompt and generate again.");
+  }
+}
+
 async function generateInsights() {
   const existingPreferences = getAiPreferences();
   const actual = $("insights-actual").value.trim();
@@ -333,6 +489,8 @@ async function generateInsights() {
       await writeInsightsToWorksheet(result);
       log("Insights worksheet updated.");
     }
+
+    await loadHistory(1);
   } catch (error) {
     resultEl.textContent = "";
     throw error;
@@ -388,4 +546,34 @@ Office.onReady(() => {
   $("generate-insights").addEventListener("click", () => {
     generateInsights().catch((error) => log(error.message));
   });
+  $("history-refresh").addEventListener("click", () => {
+    loadHistory(1).catch((error) => log(error.message));
+  });
+  $("history-prev").addEventListener("click", () => {
+    if (historyState.page > 1) {
+      loadHistory(historyState.page - 1).catch((error) => log(error.message));
+    }
+  });
+  $("history-next").addEventListener("click", () => {
+    if (historyState.page * historyState.pageSize < historyState.total) {
+      loadHistory(historyState.page + 1).catch((error) => log(error.message));
+    }
+  });
+  $("history-list").addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const action = target.dataset.historyAction;
+    const id = Number.parseInt(target.dataset.historyId || "", 10);
+    if (!action || Number.isNaN(id)) {
+      return;
+    }
+    const item = historyCache.get(id);
+    if (!item) {
+      return;
+    }
+    handleHistoryAction(action, item).catch((error) => log(error.message));
+  });
+  loadHistory().catch((error) => log(error.message));
 });

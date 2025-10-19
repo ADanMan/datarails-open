@@ -101,6 +101,33 @@
         </label>
         <button id="generate-insights" type="button">Generate insights</button>
         <div id="insights-result" class="insights-result" aria-live="polite"></div>
+        <div class="history-container">
+          <h3>History</h3>
+          <div class="history-controls">
+            <input
+              id="history-actual"
+              type="text"
+              placeholder="Filter by actual scenario"
+            />
+            <input
+              id="history-budget"
+              type="text"
+              placeholder="Filter by budget scenario"
+            />
+            <input
+              id="history-search"
+              type="text"
+              placeholder="Search prompts"
+            />
+            <button id="history-refresh" type="button">Load history</button>
+          </div>
+          <ul id="history-list" class="history-list" aria-live="polite"></ul>
+          <div class="history-pagination">
+            <button id="history-prev" type="button">Previous</button>
+            <span id="history-page-info"></span>
+            <button id="history-next" type="button">Next</button>
+          </div>
+        </div>
       </section>
       <section>
         <h2>Status</h2>
