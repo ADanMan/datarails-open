@@ -165,8 +165,8 @@ manifest (3000 for the task pane, 8000 for the Python bridge).
 The FastAPI bridge reads the same environment variables as the CLI when calling
 an OpenAI-compatible endpoint:
 
-- `DATARAILS_OPEN_API_KEY` – required unless the Excel task pane provides an
-  API key for each request.
+- `DATARAILS_OPEN_API_KEY` – optional default key used when no stored or
+  request-level key is available.
 - `DATARAILS_OPEN_API_BASE` – optional override for the base URL (defaults to
   `https://api.openai.com/v1`).
 - `DATARAILS_OPEN_MODEL` – optional model identifier (defaults to
@@ -174,9 +174,28 @@ an OpenAI-compatible endpoint:
 - `DATARAILS_OPEN_API_MODE` – optional endpoint selection
   (`chat-completions` or `responses`, default `chat-completions`).
 
-You can combine environment defaults with per-request overrides in the task
-pane. When entering a key in Excel it is stored in the browser's local storage
-for convenience—clear the field when using shared devices.
+In addition to environment variables, the bridge can persist an API key in an
+encrypted file located under `app/`. To enable secure storage, configure an
+administrative bearer token on the backend:
+
+```bash
+export DATARAILS_OPEN_BRIDGE_TOKEN="bridge-admin-token"
+```
+
+Clients can then call the protected endpoint to update the stored key:
+
+```bash
+curl -X POST "https://localhost:8000/settings/api-key" \
+  -H "Authorization: Bearer ${DATARAILS_OPEN_BRIDGE_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"apiKey": "sk-..."}'
+```
+
+The Excel task pane surfaces a **Store personal API key on the bridge** checkbox
+that uses this endpoint automatically. Provide the same bearer token in the
+task pane's connection settings so the add-in can authenticate. The add-in only
+stores the "use personal key" flag locally; the key itself is encrypted on disk
+by the backend and reused for subsequent `/insights/variance` requests.
 
 ### Generate insights from Excel
 

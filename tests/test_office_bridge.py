@@ -6,7 +6,12 @@ import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
-from app.office_bridge import create_app
+from app.office_bridge import (
+    BRIDGE_TOKEN_ENV,
+    ENCRYPTED_API_KEY_PATH,
+    SECRET_KEY_PATH,
+    create_app,
+)
 
 
 def _write_sample_csv(path: Path) -> None:
@@ -30,6 +35,8 @@ def _write_sample_workbook(path: Path) -> None:
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
     db_path = tmp_path / "test.db"
+    ENCRYPTED_API_KEY_PATH.unlink(missing_ok=True)
+    SECRET_KEY_PATH.unlink(missing_ok=True)
     app = create_app(database_path=db_path)
     return TestClient(app)
 
@@ -228,6 +235,54 @@ def test_generate_insights_route_returns_summary(
     assert config.mode == "responses"
 
 
+def test_store_api_key_and_generate_without_payload(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, tmp_path: Path
+) -> None:
+    source = tmp_path / "data.csv"
+    _write_sample_csv(source)
+
+    client.post(
+        "/load-data",
+        json={"path": str(source), "source": "csv", "scenario": "Actuals"},
+    )
+    client.post(
+        "/load-data",
+        json={"path": str(source), "source": "csv", "scenario": "Budget"},
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_generate_insights(rows, config, prompt=None):  # type: ignore[no-untyped-def]
+        captured["rows"] = rows
+        captured["config"] = config
+        captured["prompt"] = prompt
+        return "Variance summary"
+
+    monkeypatch.setattr("app.office_bridge.ai.generate_insights", fake_generate_insights)
+    monkeypatch.setenv(BRIDGE_TOKEN_ENV, "bridge-secret")
+
+    response = client.post(
+        "/settings/api-key",
+        json={"apiKey": "stored-key"},
+        headers={"Authorization": "Bearer bridge-secret"},
+    )
+    assert response.status_code == 204
+
+    response = client.post(
+        "/insights/variance",
+        json={
+            "actualScenario": "Actuals",
+            "budgetScenario": "Budget",
+            "includeRows": False,
+        },
+    )
+
+    assert response.status_code == 200
+    config = captured["config"]
+    assert config.api_key == "stored-key"
+    assert response.json()["insights"] == "Variance summary"
+
+
 def test_generate_insights_missing_key_returns_400(
     monkeypatch: pytest.MonkeyPatch, client: TestClient
 ) -> None:
@@ -239,4 +294,4 @@ def test_generate_insights_missing_key_returns_400(
     )
 
     assert response.status_code == 400
-    assert "DATARAILS_OPEN_API_KEY" in response.json()["detail"]
+    assert "/settings/api-key" in response.json()["detail"]

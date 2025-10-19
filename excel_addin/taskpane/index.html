@@ -16,6 +16,13 @@
         <h2>Backend connection</h2>
         <label class="form-label" for="backend-url">Bridge base URL</label>
         <input id="backend-url" type="url" placeholder="https://localhost:8000" />
+        <label class="form-label" for="bridge-token">Bridge admin token</label>
+        <input
+          id="bridge-token"
+          type="password"
+          placeholder="Required for secure credential storage"
+          autocomplete="off"
+        />
         <button id="save-settings" type="button">Save connection</button>
         <p id="connection-status" class="status"></p>
       </section>
@@ -59,8 +66,8 @@
       <section>
         <h2>AI Insights</h2>
         <p class="alert">
-          API keys entered below are stored in this device's local storage for reuse. Clear the
-          value when working on a shared computer.
+          Personal API keys are encrypted and stored on the bridge. This device only keeps a flag
+          indicating whether to use a personal key.
         </p>
         <label class="form-label" for="insights-actual">Actual scenario</label>
         <input id="insights-actual" type="text" value="Actuals" />
@@ -74,6 +81,10 @@
         ></textarea>
         <label class="form-label" for="insights-api-key">API key</label>
         <input id="insights-api-key" type="password" placeholder="sk-..." autocomplete="off" />
+        <label class="form-checkbox">
+          <input id="insights-use-personal-key" type="checkbox" /> Store personal API key on the
+          bridge for future requests
+        </label>
         <label class="form-label" for="insights-api-base">API base URL (optional)</label>
         <input id="insights-api-base" type="url" placeholder="https://api.openai.com/v1" />
         <label class="form-label" for="insights-model">Model (optional)</label>
