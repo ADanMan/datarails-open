@@ -172,3 +172,71 @@ def test_load_xlsx_missing_table_returns_400(
 
     assert response.status_code == 400
     assert "Table 'MissingTable' not found" in response.json()["detail"]
+
+
+def test_generate_insights_route_returns_summary(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, tmp_path: Path
+) -> None:
+    source = tmp_path / "data.csv"
+    _write_sample_csv(source)
+
+    client.post(
+        "/load-data",
+        json={"path": str(source), "source": "csv", "scenario": "Actuals"},
+    )
+    client.post(
+        "/load-data",
+        json={"path": str(source), "source": "csv", "scenario": "Budget"},
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_generate_insights(rows, config, prompt=None):  # type: ignore[no-untyped-def]
+        captured["rows"] = rows
+        captured["config"] = config
+        captured["prompt"] = prompt
+        return "Variance summary"
+
+    monkeypatch.setattr("app.office_bridge.ai.generate_insights", fake_generate_insights)
+
+    response = client.post(
+        "/insights/variance",
+        json={
+            "actualScenario": "Actuals",
+            "budgetScenario": "Budget",
+            "prompt": "Explain the movement",
+            "includeRows": True,
+            "api": {
+                "apiKey": "test-key",
+                "apiBase": "https://example.test/v1",
+                "model": "gpt-test",
+                "mode": "responses",
+            },
+        },
+    )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["insights"] == "Variance summary"
+    assert payload["rowCount"] == 1
+    assert payload["rows"][0]["account"] == "Revenue"
+    assert captured["prompt"] == "Explain the movement"
+    config = captured["config"]
+    assert config.api_key == "test-key"
+    assert config.api_base == "https://example.test/v1"
+    assert config.model == "gpt-test"
+    assert config.mode == "responses"
+
+
+def test_generate_insights_missing_key_returns_400(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    monkeypatch.delenv("DATARAILS_OPEN_API_KEY", raising=False)
+
+    response = client.post(
+        "/insights/variance",
+        json={"actualScenario": "Actuals", "budgetScenario": "Budget"},
+    )
+
+    assert response.status_code == 400
+    assert "DATARAILS_OPEN_API_KEY" in response.json()["detail"]

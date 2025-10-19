@@ -15,6 +15,9 @@ the command line.
   APIs (`insights`).
 - **Scenario modelling** that applies percentage adjustments and stores or
   exports the resulting dataset (`build-scenario`).
+- **Excel task pane** that talks to a FastAPI bridge for loading data,
+  refreshing reports, exporting scenarios, and generating AI insights directly
+  from Excel.
 
 ## Quick start
 
@@ -128,6 +131,8 @@ commands on macOS Excel:
   into a worksheet table named `ReportsTable`.
 - **Export scenario** – call `/scenarios/export`, optionally persist the result
   to SQLite, and push the adjusted rows to `ScenariosTable`.
+- **AI insights** – call `/insights/variance` to request a narrative summary of
+  variance data and, optionally, populate an `Insights` worksheet.
 
 ### Start the HTTPS services
 
@@ -154,6 +159,39 @@ manifest (3000 for the task pane, 8000 for the Python bridge).
    npm install
    npm run dev
    ```
+
+### Configure AI credentials
+
+The FastAPI bridge reads the same environment variables as the CLI when calling
+an OpenAI-compatible endpoint:
+
+- `DATARAILS_OPEN_API_KEY` – required unless the Excel task pane provides an
+  API key for each request.
+- `DATARAILS_OPEN_API_BASE` – optional override for the base URL (defaults to
+  `https://api.openai.com/v1`).
+- `DATARAILS_OPEN_MODEL` – optional model identifier (defaults to
+  `gpt-4o-mini`).
+- `DATARAILS_OPEN_API_MODE` – optional endpoint selection
+  (`chat-completions` or `responses`, default `chat-completions`).
+
+You can combine environment defaults with per-request overrides in the task
+pane. When entering a key in Excel it is stored in the browser's local storage
+for convenience—clear the field when using shared devices.
+
+### Generate insights from Excel
+
+Once the backend and task pane are running:
+
+1. Open the **Datarails** tab in Excel and verify the bridge URL matches your
+   FastAPI instance (for example `https://localhost:8000`).
+2. In the **AI Insights** section select the actual and budget scenarios that
+   exist in your SQLite database, optionally tweak the prompt, and provide an
+   API key (unless the backend already has `DATARAILS_OPEN_API_KEY`).
+3. Choose whether to store the response in the `Insights` worksheet and adjust
+   the advanced options (API base, model, endpoint) if required.
+4. Click **Generate insights**. The task pane displays the narrative response
+   and, when enabled, populates the `Insights` worksheet with both the
+   narrative and the underlying variance rows.
 
 ### macOS sideloading notes
 
@@ -189,7 +227,12 @@ workbook:
    persistence options, then click **Export scenario to worksheet**. The
    `Scenarios` worksheet should contain a refreshed `ScenariosTable` with the
    adjusted data.
-4. Repeat the workflow after modifying the underlying data to ensure the tables
+4. **Generate AI insights** – Populate the **AI Insights** form with actual and
+   budget scenarios, provide an API key if needed, and press **Generate
+   insights**. The task pane should render the narrative response, and the
+   `Insights` worksheet should contain the narrative plus an
+   `InsightsVarianceTable` when the checkbox is enabled.
+5. Repeat the workflow after modifying the underlying data to ensure the tables
    update in-place.
 
 Automated integration coverage is provided by `tests/test_office_bridge.py`,

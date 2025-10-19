@@ -1,6 +1,7 @@
 /* global Office, Excel */
 
 const SETTINGS_KEY = "datarails-open-backend";
+const AI_SETTINGS_KEY = "datarails-open-ai-settings";
 
 function $(id) {
   return document.getElementById(id);
@@ -18,6 +19,32 @@ function getBackendUrl() {
 
 function saveBackendUrl(url) {
   window.localStorage.setItem(SETTINGS_KEY, url);
+}
+
+function getAiSettings() {
+  const raw = window.localStorage.getItem(AI_SETTINGS_KEY);
+  if (!raw) {
+    return {};
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    return {};
+  }
+}
+
+function saveAiSettings(settings) {
+  const payload = {};
+  Object.entries(settings).forEach(([key, value]) => {
+    if (value) {
+      payload[key] = value;
+    }
+  });
+  if (Object.keys(payload).length) {
+    window.localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(payload));
+  } else {
+    window.localStorage.removeItem(AI_SETTINGS_KEY);
+  }
 }
 
 async function callBackend(path, options = {}) {
@@ -62,13 +89,14 @@ async function ensureWorksheet(context, name) {
   return sheet;
 }
 
-async function upsertTable(context, sheet, tableName, headers, rows) {
+async function upsertTable(context, sheet, tableName, headers, rows, startRow = 1) {
   let table = sheet.tables.getItemOrNullObject(tableName);
   await context.sync();
   if (table.isNullObject) {
     const lastColumn = columnAddress(headers.length - 1);
-    const lastRow = Math.max(rows.length, 1) + 1;
-    const address = `${sheet.name}!A1:${lastColumn}${lastRow}`;
+    const topRow = startRow;
+    const lastRow = startRow + Math.max(rows.length, 1);
+    const address = `${sheet.name}!A${topRow}:${lastColumn}${lastRow}`;
     table = sheet.tables.add(address, true /* hasHeaders */);
     table.name = tableName;
   }
@@ -167,6 +195,108 @@ async function exportScenario() {
   log(result.message || `Scenario exported with ${rows.length} rows.`);
 }
 
+async function writeInsightsToWorksheet(result) {
+  const rows = Array.isArray(result.rows) ? result.rows : [];
+  const headers = ["Period", "Department", "Account", "Actual", "Budget", "Variance"];
+  const tableRows = rows.map((row) => [
+    row.period,
+    row.department,
+    row.account,
+    row.actual,
+    row.budget,
+    row.variance,
+  ]);
+
+  await Excel.run(async (context) => {
+    const sheet = await ensureWorksheet(context, "Insights");
+    sheet.getRange("A1").values = [["Narrative insights"]];
+    const narrativeRange = sheet.getRange("A2");
+    narrativeRange.values = [[result.insights || ""]];
+    narrativeRange.format.wrapText = true;
+    sheet.getRange("A3").values = [[
+      `Actual: ${result.actualScenario || ""} vs Budget: ${result.budgetScenario || ""}`,
+    ]];
+    await upsertTable(context, sheet, "InsightsVarianceTable", headers, tableRows, 5);
+    sheet.activate();
+  });
+}
+
+async function generateInsights() {
+  const actual = $("insights-actual").value.trim();
+  const budget = $("insights-budget").value.trim();
+  if (!actual || !budget) {
+    log("Both actual and budget scenarios are required.");
+    return;
+  }
+
+  const prompt = $("insights-prompt").value.trim();
+  const apiKey = $("insights-api-key").value.trim();
+  const apiBase = $("insights-api-base").value.trim();
+  const model = $("insights-model").value.trim();
+  const mode = $("insights-mode").value.trim();
+  const saveToSheet = $("insights-save-sheet").checked;
+
+  const payload = {
+    actualScenario: actual,
+    budgetScenario: budget,
+    includeRows: saveToSheet,
+  };
+  if (prompt) {
+    payload.prompt = prompt;
+  }
+
+  const apiConfig = {};
+  if (apiKey) apiConfig.apiKey = apiKey;
+  if (apiBase) apiConfig.apiBase = apiBase;
+  if (model) apiConfig.model = model;
+  if (mode) apiConfig.mode = mode;
+  if (Object.keys(apiConfig).length) {
+    payload.api = apiConfig;
+  }
+
+  saveAiSettings({ apiKey, apiBase, model, mode });
+
+  log(`Requesting insights for ${actual} vs ${budget}...`);
+  const resultEl = $("insights-result");
+  resultEl.textContent = "Loading insights...";
+
+  try {
+    const result = await callBackend("/insights/variance", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    const narrative = result.insights || "No insights returned.";
+    resultEl.textContent = narrative;
+
+    const rowCount = typeof result.rowCount === "number" ? result.rowCount : (Array.isArray(result.rows) ? result.rows.length : 0);
+    log(`Received insights for ${rowCount} rows.`);
+
+    if (saveToSheet) {
+      await writeInsightsToWorksheet(result);
+      log("Insights worksheet updated.");
+    }
+  } catch (error) {
+    resultEl.textContent = "";
+    throw error;
+  }
+}
+
+function initialiseAiForm() {
+  const settings = getAiSettings();
+  if (settings.apiKey) {
+    $("insights-api-key").value = settings.apiKey;
+  }
+  if (settings.apiBase) {
+    $("insights-api-base").value = settings.apiBase;
+  }
+  if (settings.model) {
+    $("insights-model").value = settings.model;
+  }
+  if (settings.mode) {
+    $("insights-mode").value = settings.mode;
+  }
+}
+
 async function saveSettings() {
   const url = $("backend-url").value.trim();
   if (!url) {
@@ -181,6 +311,7 @@ async function saveSettings() {
 Office.onReady(() => {
   $("backend-url").value = getBackendUrl();
   $("connection-status").textContent = `Using backend at ${getBackendUrl()}`;
+  initialiseAiForm();
   $("save-settings").addEventListener("click", () => {
     saveSettings().catch((error) => log(error.message));
   });
@@ -192,5 +323,8 @@ Office.onReady(() => {
   });
   $("export-scenario").addEventListener("click", () => {
     exportScenario().catch((error) => log(error.message));
+  });
+  $("generate-insights").addEventListener("click", () => {
+    generateInsights().catch((error) => log(error.message));
   });
 });

@@ -57,6 +57,41 @@
         <button id="export-scenario" type="button">Export scenario to worksheet</button>
       </section>
       <section>
+        <h2>AI Insights</h2>
+        <p class="alert">
+          API keys entered below are stored in this device's local storage for reuse. Clear the
+          value when working on a shared computer.
+        </p>
+        <label class="form-label" for="insights-actual">Actual scenario</label>
+        <input id="insights-actual" type="text" value="Actuals" />
+        <label class="form-label" for="insights-budget">Budget scenario</label>
+        <input id="insights-budget" type="text" value="Budget" />
+        <label class="form-label" for="insights-prompt">Custom prompt (optional)</label>
+        <textarea
+          id="insights-prompt"
+          rows="4"
+          placeholder="Highlight major drivers behind the variance and suggest next steps."
+        ></textarea>
+        <label class="form-label" for="insights-api-key">API key</label>
+        <input id="insights-api-key" type="password" placeholder="sk-..." autocomplete="off" />
+        <label class="form-label" for="insights-api-base">API base URL (optional)</label>
+        <input id="insights-api-base" type="url" placeholder="https://api.openai.com/v1" />
+        <label class="form-label" for="insights-model">Model (optional)</label>
+        <input id="insights-model" type="text" placeholder="gpt-4o-mini" />
+        <label class="form-label" for="insights-mode">API mode</label>
+        <select id="insights-mode">
+          <option value="">Auto (use backend defaults)</option>
+          <option value="chat-completions">Chat completions</option>
+          <option value="responses">Responses</option>
+        </select>
+        <label class="form-checkbox">
+          <input id="insights-save-sheet" type="checkbox" checked /> Write insights and data to the
+          Insights worksheet
+        </label>
+        <button id="generate-insights" type="button">Generate insights</button>
+        <div id="insights-result" class="insights-result" aria-live="polite"></div>
+      </section>
+      <section>
         <h2>Status</h2>
         <pre id="status-log" class="log" aria-live="polite"></pre>
       </section>

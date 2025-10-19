@@ -9,12 +9,17 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 from . import ai, database, excel_loader, loader, reporting, scenario
+from .settings import (
+    API_BASE_ENV,
+    API_KEY_ENV,
+    API_MODE_ENV,
+    MODEL_ENV,
+    DEFAULT_API_BASE,
+    DEFAULT_API_MODE,
+    DEFAULT_MODEL,
+)
 
 DEFAULT_DB = Path("financials.db")
-API_KEY_ENV = "DATARAILS_OPEN_API_KEY"
-API_BASE_ENV = "DATARAILS_OPEN_API_BASE"
-MODEL_ENV = "DATARAILS_OPEN_MODEL"
-API_MODE_ENV = "DATARAILS_OPEN_API_MODE"
 
 
 def _ensure_db(db_path: Path) -> None:
@@ -178,9 +183,9 @@ def insights_command(args: argparse.Namespace) -> None:
             f"{API_KEY_ENV} environment variable."
         )
 
-    api_base = args.api_base or os.environ.get(API_BASE_ENV) or "https://api.openai.com/v1"
-    model = args.model or os.environ.get(MODEL_ENV) or "gpt-4o-mini"
-    mode_value = args.api_mode or os.environ.get(API_MODE_ENV, "chat-completions")
+    api_base = args.api_base or os.environ.get(API_BASE_ENV) or DEFAULT_API_BASE
+    model = args.model or os.environ.get(MODEL_ENV) or DEFAULT_MODEL
+    mode_value = args.api_mode or os.environ.get(API_MODE_ENV) or DEFAULT_API_MODE
     if mode_value not in {"chat-completions", "responses"}:
         raise SystemExit(
             "API mode must be either 'chat-completions' or 'responses' (received "
@@ -198,17 +203,7 @@ def insights_command(args: argparse.Namespace) -> None:
     finally:
         conn.close()
 
-    structured_rows = [
-        {
-            "period": period,
-            "department": department,
-            "account": account,
-            "actual": actual,
-            "budget": budget,
-            "variance": variance,
-        }
-        for period, department, account, actual, budget, variance in rows
-    ]
+    structured_rows = reporting.serialise_variance_rows(rows)
 
     config = ai.AIConfig(api_key=api_key, api_base=api_base, model=model, mode=mode)
     insights = ai.generate_insights(structured_rows, config)
@@ -296,14 +291,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--api-base",
         help=(
             "Base URL for the API endpoint (defaults to the "
-            f"{API_BASE_ENV} environment variable or https://api.openai.com/v1)"
+            f"{API_BASE_ENV} environment variable or {DEFAULT_API_BASE})"
         ),
     )
     insights_parser.add_argument(
         "--model",
         help=(
             "Model identifier to request (defaults to the "
-            f"{MODEL_ENV} environment variable or gpt-4o-mini)"
+            f"{MODEL_ENV} environment variable or {DEFAULT_MODEL})"
         ),
     )
     insights_parser.add_argument(
@@ -311,7 +306,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["chat-completions", "responses"],
         help=(
             "Endpoint style to use for the AI request (defaults to the "
-            f"{API_MODE_ENV} environment variable or chat-completions)"
+            f"{API_MODE_ENV} environment variable or {DEFAULT_API_MODE})"
         ),
     )
     insights_parser.add_argument("--output", help="Optional path to write insights to disk")
