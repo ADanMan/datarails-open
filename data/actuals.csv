@@ -1,0 +1,9 @@
+period,department,account,value,currency
+2024-01,Sales,Revenue,120000,USD
+2024-01,Sales,Expenses,-45000,USD
+2024-01,Marketing,Revenue,30000,USD
+2024-01,Marketing,Expenses,-20000,USD
+2024-02,Sales,Revenue,130000,USD
+2024-02,Sales,Expenses,-47000,USD
+2024-02,Marketing,Revenue,32000,USD
+2024-02,Marketing,Expenses,-21000,USD
