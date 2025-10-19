@@ -1,7 +1,8 @@
 /* global Office, Excel */
 
 const SETTINGS_KEY = "datarails-open-backend";
-const AI_SETTINGS_KEY = "datarails-open-ai-settings";
+const AI_PREFERENCES_KEY = "datarails-open-ai-preferences";
+const BRIDGE_TOKEN_KEY = "datarails-open-bridge-token";
 
 function $(id) {
   return document.getElementById(id);
@@ -21,8 +22,20 @@ function saveBackendUrl(url) {
   window.localStorage.setItem(SETTINGS_KEY, url);
 }
 
-function getAiSettings() {
-  const raw = window.localStorage.getItem(AI_SETTINGS_KEY);
+function getBridgeToken() {
+  return window.localStorage.getItem(BRIDGE_TOKEN_KEY) || "";
+}
+
+function saveBridgeToken(token) {
+  if (token) {
+    window.localStorage.setItem(BRIDGE_TOKEN_KEY, token);
+  } else {
+    window.localStorage.removeItem(BRIDGE_TOKEN_KEY);
+  }
+}
+
+function getAiPreferences() {
+  const raw = window.localStorage.getItem(AI_PREFERENCES_KEY);
   if (!raw) {
     return {};
   }
@@ -33,32 +46,61 @@ function getAiSettings() {
   }
 }
 
-function saveAiSettings(settings) {
+function saveAiPreferences(preferences) {
   const payload = {};
-  Object.entries(settings).forEach(([key, value]) => {
-    if (value) {
+  Object.entries(preferences).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
       payload[key] = value;
     }
   });
   if (Object.keys(payload).length) {
-    window.localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(payload));
+    window.localStorage.setItem(AI_PREFERENCES_KEY, JSON.stringify(payload));
   } else {
-    window.localStorage.removeItem(AI_SETTINGS_KEY);
+    window.localStorage.removeItem(AI_PREFERENCES_KEY);
   }
 }
 
 async function callBackend(path, options = {}) {
   const base = getBackendUrl().replace(/\/$/, "");
   const url = `${base}${path}`;
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
   const response = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers,
   });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Request failed (${response.status}): ${text}`);
   }
+  if (response.status === 204) {
+    return null;
+  }
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    return null;
+  }
   return response.json();
+}
+
+async function storeApiKeyOnBridge(apiKey) {
+  const token = getBridgeToken();
+  if (!token) {
+    throw new Error(
+      "Set the bridge admin token in connection settings before storing API keys.",
+    );
+  }
+  const headers = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  await callBackend("/settings/api-key", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ apiKey: apiKey || null }),
+  });
 }
 
 function parseList(value) {
@@ -222,6 +264,7 @@ async function writeInsightsToWorksheet(result) {
 }
 
 async function generateInsights() {
+  const existingPreferences = getAiPreferences();
   const actual = $("insights-actual").value.trim();
   const budget = $("insights-budget").value.trim();
   if (!actual || !budget) {
@@ -235,6 +278,7 @@ async function generateInsights() {
   const model = $("insights-model").value.trim();
   const mode = $("insights-mode").value.trim();
   const saveToSheet = $("insights-save-sheet").checked;
+  const usePersonalKey = $("insights-use-personal-key").checked;
 
   const payload = {
     actualScenario: actual,
@@ -246,7 +290,6 @@ async function generateInsights() {
   }
 
   const apiConfig = {};
-  if (apiKey) apiConfig.apiKey = apiKey;
   if (apiBase) apiConfig.apiBase = apiBase;
   if (model) apiConfig.model = model;
   if (mode) apiConfig.mode = mode;
@@ -254,7 +297,22 @@ async function generateInsights() {
     payload.api = apiConfig;
   }
 
-  saveAiSettings({ apiKey, apiBase, model, mode });
+  saveAiPreferences({
+    apiBase,
+    model,
+    mode,
+    usePersonalKey,
+  });
+
+  if (usePersonalKey) {
+    if (apiKey) {
+      log("Storing API key on the bridge...");
+      await storeApiKeyOnBridge(apiKey);
+    }
+  } else if (existingPreferences.usePersonalKey) {
+    log("Clearing stored API key on the bridge...");
+    await storeApiKeyOnBridge(null);
+  }
 
   log(`Requesting insights for ${actual} vs ${budget}...`);
   const resultEl = $("insights-result");
@@ -282,34 +340,37 @@ async function generateInsights() {
 }
 
 function initialiseAiForm() {
-  const settings = getAiSettings();
-  if (settings.apiKey) {
-    $("insights-api-key").value = settings.apiKey;
+  const preferences = getAiPreferences();
+  if (preferences.apiBase) {
+    $("insights-api-base").value = preferences.apiBase;
   }
-  if (settings.apiBase) {
-    $("insights-api-base").value = settings.apiBase;
+  if (preferences.model) {
+    $("insights-model").value = preferences.model;
   }
-  if (settings.model) {
-    $("insights-model").value = settings.model;
+  if (preferences.mode) {
+    $("insights-mode").value = preferences.mode;
   }
-  if (settings.mode) {
-    $("insights-mode").value = settings.mode;
+  if (typeof preferences.usePersonalKey === "boolean") {
+    $("insights-use-personal-key").checked = preferences.usePersonalKey;
   }
 }
 
 async function saveSettings() {
   const url = $("backend-url").value.trim();
+  const token = $("bridge-token").value.trim();
   if (!url) {
     log("Please provide a backend base URL.");
     return;
   }
   saveBackendUrl(url);
+  saveBridgeToken(token);
   $("connection-status").textContent = `Using backend at ${url}`;
   log(`Saved backend URL: ${url}`);
 }
 
 Office.onReady(() => {
   $("backend-url").value = getBackendUrl();
+  $("bridge-token").value = getBridgeToken();
   $("connection-status").textContent = `Using backend at ${getBackendUrl()}`;
   initialiseAiForm();
   $("save-settings").addEventListener("click", () => {

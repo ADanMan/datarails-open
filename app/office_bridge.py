@@ -6,8 +6,10 @@ from contextlib import closing
 from pathlib import Path
 from typing import Iterable, List, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from cryptography.fernet import Fernet, InvalidToken
+from fastapi import FastAPI, HTTPException, Query, Security
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import ai, database, excel_loader, loader, reporting, scenario
@@ -22,6 +24,10 @@ from .settings import (
 )
 
 DEFAULT_DB_PATH = Path(os.environ.get("DATARAILS_DB", "financials.db"))
+BRIDGE_TOKEN_ENV = "DATARAILS_OPEN_BRIDGE_TOKEN"
+SECRET_STORAGE_DIR = Path(__file__).resolve().parent
+SECRET_KEY_PATH = SECRET_STORAGE_DIR / ".bridge_api_secret"
+ENCRYPTED_API_KEY_PATH = SECRET_STORAGE_DIR / ".bridge_api_key"
 
 
 class LoadDataRequest(BaseModel):
@@ -58,6 +64,12 @@ class AISettings(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class StoreApiKeyRequest(BaseModel):
+    api_key: Optional[str] = Field(default=None, alias="apiKey")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class InsightsRequest(BaseModel):
     actual_scenario: str = Field(..., alias="actualScenario")
     budget_scenario: str = Field(..., alias="budgetScenario")
@@ -82,15 +94,67 @@ def _ensure_database(db_path: Path) -> None:
         database.init_db(db_path)
 
 
+def _write_secure_file(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data)
+    os.replace(temp_path, path)
+    os.chmod(path, 0o600)
+
+
+def _load_or_create_secret_key() -> bytes:
+    if SECRET_KEY_PATH.exists():
+        return SECRET_KEY_PATH.read_bytes()
+    key = Fernet.generate_key()
+    _write_secure_file(SECRET_KEY_PATH, key)
+    return key
+
+
 class BridgeService:
     """Wrapper around the core modules that enforces consistent database usage."""
 
     def __init__(self, database_path: Path | str | None = None) -> None:
         self.database_path = Path(database_path or DEFAULT_DB_PATH)
+        self._cipher: Fernet | None = None
 
     def _connection(self):
         _ensure_database(self.database_path)
         return database.get_connection(self.database_path)
+
+    def _get_cipher(self) -> Fernet:
+        if self._cipher is None:
+            key_bytes = _load_or_create_secret_key()
+            self._cipher = Fernet(key_bytes)
+        return self._cipher
+
+    def store_api_key(self, api_key: Optional[str]) -> None:
+        if not api_key:
+            ENCRYPTED_API_KEY_PATH.unlink(missing_ok=True)
+            return
+
+        cipher = self._get_cipher()
+        encrypted = cipher.encrypt(api_key.encode("utf-8"))
+        _write_secure_file(ENCRYPTED_API_KEY_PATH, encrypted)
+
+    def get_api_key(self) -> Optional[str]:
+        env_key = os.environ.get(API_KEY_ENV)
+        if env_key:
+            return env_key
+        if not ENCRYPTED_API_KEY_PATH.exists():
+            return None
+
+        cipher = self._get_cipher()
+        try:
+            encrypted = ENCRYPTED_API_KEY_PATH.read_bytes()
+            decrypted = cipher.decrypt(encrypted)
+        except InvalidToken as exc:  # pragma: no cover - unexpected corruption
+            raise HTTPException(
+                status_code=500,
+                detail="Stored API key could not be decrypted. Reconfigure the key.",
+            ) from exc
+        return decrypted.decode("utf-8")
 
     def load_data(self, request: LoadDataRequest) -> dict:
         source_path = _normalise_path(request.path)
@@ -199,13 +263,13 @@ class BridgeService:
 
     def generate_insights(self, request: InsightsRequest) -> dict:
         api_settings = request.api
-        api_key = (api_settings.api_key if api_settings else None) or os.environ.get(API_KEY_ENV)
+        api_key = (api_settings.api_key if api_settings else None) or self.get_api_key()
         if not api_key:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "An API key is required to generate insights. Provide one via "
-                    "api.apiKey or the "
+                    "An API key is required to generate insights. Configure one via "
+                    "/settings/api-key or set the "
                     f"{API_KEY_ENV} environment variable."
                 ),
             )
@@ -270,6 +334,31 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    auth_scheme = HTTPBearer(auto_error=False)
+
+    def require_bridge_token(
+        credentials: HTTPAuthorizationCredentials | None = Security(auth_scheme),
+    ) -> bool:
+        expected = os.environ.get(BRIDGE_TOKEN_ENV)
+        if not expected:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Bridge token is not configured on the server. Set "
+                    f"{BRIDGE_TOKEN_ENV} to enable secure credential storage."
+                ),
+            )
+        if (
+            credentials is None
+            or credentials.scheme.lower() != "bearer"
+            or credentials.credentials != expected
+        ):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid or missing authentication token.",
+            )
+        return True
+
     @app.post("/load-data")
     def load_data(request: LoadDataRequest):
         return service.load_data(request)
@@ -285,6 +374,13 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
     @app.post("/insights/variance")
     def insights_variance(request: InsightsRequest):
         return service.generate_insights(request)
+
+    @app.post("/settings/api-key", status_code=204)
+    def settings_api_key(
+        request: StoreApiKeyRequest,
+        _: bool = Security(require_bridge_token),
+    ) -> None:
+        service.store_api_key(request.api_key)
 
     return app
 
