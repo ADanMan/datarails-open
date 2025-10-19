@@ -8,7 +8,7 @@ the command line.
 ## Features
 
 - **SQLite financial warehouse** with a single table of financial facts.
-- **CSV ingestion** via a lightweight CLI (`load-data`).
+- **Spreadsheet ingestion** from CSV or Excel workbooks via the `load-data` CLI.
 - **Department summaries** with totals per period (`report`).
 - **Variance analysis** between budget and actual scenarios (`variance`).
 - **Scenario modelling** that applies percentage adjustments and stores or
@@ -25,9 +25,17 @@ pip install -e .
 # Initialise the database
 python -m app.main --db financials.db init-db
 
-# Load sample data
+# Load sample data from CSV
 python -m app.main --db financials.db load-data data/actuals.csv --scenario actual
 python -m app.main --db financials.db load-data data/budget.csv --scenario budget
+
+# Load specific worksheets from an Excel workbook
+python -m app.main --db financials.db load-data data/plan.xlsx --scenario plan \
+  --sheet "Consolidated" --sheet "Adjustments"
+
+# Load a named table from an Excel workbook
+python -m app.main --db financials.db load-data data/plan.xlsx --scenario plan \
+  --table "SalesTable"
 
 # Generate a consolidated report
 python -m app.main --db financials.db report --scenario actual
@@ -45,7 +53,8 @@ python -m app.main --db financials.db build-scenario --source budget --target pl
 
 ## Data format
 
-Files must be CSV (UTF-8) and include the following columns (case-insensitive):
+Files can be CSV (UTF-8) or `.xlsx` Excel workbooks. In both cases the data must
+include the following columns (case-insensitive):
 
 - `period` – typically YYYY-MM (e.g. `2024-01`).
 - `department` – e.g. `Sales`.
@@ -66,5 +75,5 @@ pip install -e .[dev]
 pytest
 ```
 
-The project intentionally sticks to the Python standard library (plus `pytest`
-for tests) to keep the MVP easy to run in restricted environments.
+The runtime depends on `openpyxl` for Excel support and `pytest` is used for
+tests, keeping the remainder of the MVP within the Python standard library.

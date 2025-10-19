@@ -6,7 +6,7 @@ import csv
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from . import database, loader, reporting, scenario
+from . import database, excel_loader, loader, reporting, scenario
 
 DEFAULT_DB = Path("financials.db")
 
@@ -45,12 +45,25 @@ def init_db_command(args: argparse.Namespace) -> None:
 def load_data_command(args: argparse.Namespace) -> None:
     conn = _open_connection(args.db)
     try:
-        summary = loader.load_file(
-            conn,
-            args.path,
-            source=args.source,
-            scenario=args.scenario,
-        )
+        suffix = args.path.suffix.lower()
+        if suffix == ".csv":
+            summary = loader.load_file(
+                conn,
+                args.path,
+                source=args.source,
+                scenario=args.scenario,
+            )
+        elif suffix == ".xlsx":
+            summary = excel_loader.load_workbook_file(
+                conn,
+                args.path,
+                source=args.source,
+                scenario=args.scenario,
+                sheets=args.sheet,
+                tables=args.table,
+            )
+        else:
+            raise ValueError("Only CSV and XLSX files are supported")
     finally:
         conn.close()
     print(summary)
@@ -160,10 +173,20 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser = subparsers.add_parser("init-db", help="Initialise the database")
     init_parser.set_defaults(func=init_db_command)
 
-    load_parser = subparsers.add_parser("load-data", help="Load a CSV file into the warehouse")
-    load_parser.add_argument("path", type=Path, help="Path to a CSV file")
+    load_parser = subparsers.add_parser("load-data", help="Load a CSV or Excel file into the warehouse")
+    load_parser.add_argument("path", type=Path, help="Path to a CSV or XLSX file")
     load_parser.add_argument("--source", default="manual-upload", help="Identifier for the data source")
     load_parser.add_argument("--scenario", default="actual", help="Scenario label (e.g. actual, budget)")
+    load_parser.add_argument(
+        "--sheet",
+        action="append",
+        help="Worksheet name to load (can be provided multiple times)",
+    )
+    load_parser.add_argument(
+        "--table",
+        action="append",
+        help="Table name to load (can be provided multiple times)",
+    )
     load_parser.set_defaults(func=load_data_command)
 
     report_parser = subparsers.add_parser("report", help="Generate a consolidated report by department")
