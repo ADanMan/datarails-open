@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui">
+  <ribbon>
+    <tabs>
+      <tab id="tabDatarails" label="Datarails">
+        <group id="grpData" label="Data Management">
+          <button id="btnLoadData" label="Load Data" size="large" imageMso="DatabaseLoad" onAction="Ribbon_LoadData" />
+          <button id="btnRefreshReports" label="Refresh Reports" imageMso="RefreshAll" onAction="Ribbon_RefreshReports" />
+          <button id="btnExportScenario" label="Export Scenario" imageMso="Publish" onAction="Ribbon_ExportScenario" />
+        </group>
+        <group id="grpInsights" label="Insights">
+          <button id="btnGenerateInsights" label="Generate AI Insights" size="large" imageMso="SmartArtGallery" onAction="Ribbon_GenerateInsights" />
+          <button id="btnInsightsHistory" label="Load Insights History" imageMso="TableInsertDialog" onAction="Ribbon_LoadInsightsHistory" />
+          <button id="btnStoreApiKey" label="Store API Key" imageMso="ProtectionDocument" onAction="Ribbon_StoreApiKey" />
+        </group>
+        <group id="grpSettings" label="Settings">
+          <button id="btnSettings" label="Connection Settings" imageMso="ServerSettings" onAction="Ribbon_OpenSettings" />
+        </group>
+      </tab>
+    </tabs>
+  </ribbon>
+</customUI>
